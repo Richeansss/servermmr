@@ -2,14 +2,23 @@ package org.example.servermmr.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.net.InetAddress;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.UUID;
 
 @Data
+@NoArgsConstructor
 @Entity
-@Table(name = "players")
+@Table(
+        name = "players",
+        indexes = {
+                @Index(name = "idx_token", columnList = "token"),
+                @Index(name = "idx_name", columnList = "name")
+        }
+)
 public class Player {
 
     @Id
@@ -25,15 +34,16 @@ public class Player {
     @Column(nullable = false)
     private int port;
 
-    private int x;
-    private int y;
+    private int x = 0;
+    private int y = 0;
 
-    @Column(unique = true)
-    private String token; // Токен для авторизации
+    @Column(unique = true, nullable = false)
+    private String token;
 
-    private LocalDateTime tokenExpiry; // Время истечения токена
+    @Column(nullable = false)
+    private LocalDateTime tokenExpiry;
 
-    public Player() {}
+    private LocalDateTime lastSeen;
 
     public Player(String name, InetAddress address, int port) {
         this.name = name;
@@ -41,16 +51,12 @@ public class Player {
         this.port = port;
         this.x = 0;
         this.y = 0;
-        this.token = generateToken();
-        this.tokenExpiry = LocalDateTime.now().plusDays(7); // Токен действует 7 дней
-    }
-
-    private String generateToken() {
-        return UUID.randomUUID().toString();
+        refreshToken();
+        this.lastSeen = LocalDateTime.now();
     }
 
     public boolean isTokenValid() {
-        return tokenExpiry != null && LocalDateTime.now().isAfter(tokenExpiry);
+        return tokenExpiry != null && LocalDateTime.now().isBefore(tokenExpiry);
     }
 
     public void refreshToken() {
@@ -58,11 +64,17 @@ public class Player {
         this.tokenExpiry = LocalDateTime.now().plusDays(7);
     }
 
-    public void setY(int y) {
-        this.y = y;
+    private String generateToken() {
+        // Упрощённый UUID-based токен
+        return UUID.randomUUID().toString();
     }
 
-    public void setX(int x) {
-        this.x = x;
+    @PrePersist
+    @PreUpdate
+    public void ensureToken() {
+        if (token == null || tokenExpiry == null || !isTokenValid()) {
+            refreshToken();
+        }
+        this.lastSeen = LocalDateTime.now();
     }
 }
