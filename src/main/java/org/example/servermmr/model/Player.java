@@ -2,47 +2,67 @@ package org.example.servermmr.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
-import lombok.Getter;
-import lombok.Setter;
 
-import java.util.Random;
+import java.net.InetAddress;
+import java.time.LocalDateTime;
+import java.util.UUID;
 
-@Getter
-@Setter
+@Data
 @Entity
+@Table(name = "players")
 public class Player {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(unique = true, nullable = false)
     private String name;
-    private int score = 1000;
-    private int number;
 
-    public Player() {
-        this.number = generateNumber();
-    }
+    @Column(nullable = false)
+    private String ip;
 
-    public Player(String name) {
+    @Column(nullable = false)
+    private int port;
+
+    private int x;
+    private int y;
+
+    @Column(unique = true)
+    private String token; // Токен для авторизации
+
+    private LocalDateTime tokenExpiry; // Время истечения токена
+
+    public Player() {}
+
+    public Player(String name, InetAddress address, int port) {
         this.name = name;
-        this.score = 1000;
-        this.number = generateNumber();
+        this.ip = address.getHostAddress();
+        this.port = port;
+        this.x = 0;
+        this.y = 0;
+        this.token = generateToken();
+        this.tokenExpiry = LocalDateTime.now().plusDays(7); // Токен действует 7 дней
     }
 
-    public int getNumber(){
-        return number;
+    private String generateToken() {
+        return UUID.randomUUID().toString();
     }
 
-    public String getName(){
-        return name;
+    public boolean isTokenValid() {
+        return tokenExpiry != null && LocalDateTime.now().isAfter(tokenExpiry);
     }
 
-    private int generateNumber() {
-        Random random = new Random();
-        return random.nextInt(1000); // Случайное число 000-999
+    public void refreshToken() {
+        this.token = generateToken();
+        this.tokenExpiry = LocalDateTime.now().plusDays(7);
     }
 
-    public void win() { this.score += 25; }
-    public void lose() { this.score -= 20; }
+    public void setY(int y) {
+        this.y = y;
+    }
 
-    // Геттеры и сеттеры
+    public void setX(int x) {
+        this.x = x;
+    }
 }

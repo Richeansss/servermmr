@@ -1,19 +1,23 @@
 package org.example.servermmr.udp;
 
+import org.example.servermmr.model.Player;
+import org.example.servermmr.repository.PlayerRepository;
 import org.springframework.stereotype.Component;
+
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.util.concurrent.ConcurrentHashMap;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
 
 @Component
 public class GameServer implements Runnable {
     private static final int PORT = 9876;
+    private final PlayerRepository playerRepository;
 
-    // Список активных игроков (Игрок -> IP, порт)
-    private final ConcurrentHashMap<String, PlayerInfo> activePlayers = new ConcurrentHashMap<>();
-
-    public GameServer() {
+    public GameServer(PlayerRepository playerRepository) {
+        this.playerRepository = playerRepository;
         new Thread(this).start();
     }
 
@@ -26,7 +30,6 @@ public class GameServer implements Runnable {
             while (true) {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
-
                 String receivedData = new String(packet.getData(), 0, packet.getLength()).trim();
                 System.out.println("📩 Получено: " + receivedData);
 
@@ -45,10 +48,18 @@ public class GameServer implements Runnable {
             case "JOIN": // Вход в игру
                 if (parts.length == 2) {
                     String playerName = parts[1];
-                    activePlayers.put(playerName, new PlayerInfo(address, port, 0, 0));
+                    Player player = playerRepository.findByName(playerName).orElse(new Player(playerName, address, port));
 
+                    // Проверяем токен
+                    if (player.getToken() == null || player.getTokenExpiry().isBefore(LocalDateTime.now())) {
+                        player.refreshToken();
+                    }
+
+                    playerRepository.save(player);
                     System.out.println("👤 Игрок " + playerName + " вошел в игру.");
-                    sendResponse("✅ Добро пожаловать, " + playerName + "!", address, port, socket);
+
+                    // Отправляем игроку его токен
+                    sendResponse("✅ Добро пожаловать, " + playerName + "! Ваш токен: " + player.getToken(), address, port, socket);
                     broadcast("📢 Игрок " + playerName + " вошел в игру.", socket);
                 }
                 break;
@@ -56,7 +67,7 @@ public class GameServer implements Runnable {
             case "LEAVE": // Выход из игры
                 if (parts.length == 2) {
                     String playerName = parts[1];
-                    activePlayers.remove(playerName);
+                    playerRepository.findByName(playerName).ifPresent(playerRepository::delete);
 
                     System.out.println("🚪 Игрок " + playerName + " вышел из игры.");
                     sendResponse("👋 Вы вышли из игры.", address, port, socket);
@@ -65,21 +76,30 @@ public class GameServer implements Runnable {
                 break;
 
             case "COUNT": // Количество игроков
-                int playerCount = activePlayers.size();
+                long playerCount = playerRepository.count();
                 sendResponse("🎮 Сейчас в игре: " + playerCount + " игроков.", address, port, socket);
                 break;
 
-            case "MOVE": // Движение игрока
+            case "MOVE": // Движение игрока (MOVE name token x y)
                 if (parts.length == 4) {
                     String playerName = parts[1];
-                    int x = Integer.parseInt(parts[2]);
-                    int y = Integer.parseInt(parts[3]);
+                    String token = parts[2];
+                    int x = Integer.parseInt(parts[3]);
+                    int y = Integer.parseInt(parts[4]);
 
-                    PlayerInfo player = activePlayers.get(playerName);
-                    if (player != null) {
-                        player.setX(x);
-                        player.setY(y);
-                        broadcast("🚀 " + playerName + " передвинулся в [" + x + "," + y + "]", socket);
+                    Optional<Player> playerOpt = playerRepository.findByName(playerName);
+                    if (playerOpt.isPresent()) {
+                        Player player = playerOpt.get();
+                        if (player.getToken().equals(token) && player.getTokenExpiry().isAfter(LocalDateTime.now())) {
+                            player.setX(x);
+                            player.setY(y);
+                            playerRepository.save(player);
+                            broadcast("🚀 " + playerName + " передвинулся в [" + x + "," + y + "]", socket);
+                        } else {
+                            sendResponse("❌ Неверный или истекший токен!", address, port, socket);
+                        }
+                    } else {
+                        sendResponse("❌ Игрок не найден!", address, port, socket);
                     }
                 }
                 break;
@@ -100,25 +120,14 @@ public class GameServer implements Runnable {
     }
 
     private void broadcast(String message, DatagramSocket socket) {
-        activePlayers.forEach((name, player) -> sendResponse(message, player.getAddress(), player.getPort(), socket));
-    }
-
-    // Класс для хранения информации об игроках
-    private static class PlayerInfo {
-        private final InetAddress address;
-        private final int port;
-        private int x, y;
-
-        public PlayerInfo(InetAddress address, int port, int x, int y) {
-            this.address = address;
-            this.port = port;
-            this.x = x;
-            this.y = y;
-        }
-
-        public InetAddress getAddress() { return address; }
-        public int getPort() { return port; }
-        public void setX(int x) { this.x = x; }
-        public void setY(int y) { this.y = y; }
+        List<Player> players = playerRepository.findAll();
+        players.forEach(player -> {
+            try {
+                InetAddress address = InetAddress.getByName(player.getIp());
+                sendResponse(message, address, player.getPort(), socket);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
     }
 }
