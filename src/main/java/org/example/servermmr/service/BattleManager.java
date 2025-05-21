@@ -27,15 +27,6 @@ public class BattleManager {
         return Optional.ofNullable(id).map(battles::get);
     }
 
-    public void endBattle(String playerName, String result) {
-        getBattleByPlayer(playerName).ifPresent(battle -> {
-            if (battle.isActive()) {
-                battle.setResult(result);
-                battle.setEndTime(LocalDateTime.now());
-                battle.setActive(false);
-            }
-        });
-    }
 
     public void removeBattle(String battleId) {
         Battle battle = battles.remove(battleId);
@@ -44,4 +35,19 @@ public class BattleManager {
             playerToBattle.remove(battle.getPlayer2().getName());
         }
     }
+
+    public String rollDigitForPlayer(String playerName) {
+        Battle battle = battles.values().stream()
+                .filter(b -> b.getPlayer1().getName().equals(playerName) || b.getPlayer2().getName().equals(playerName))
+                .findFirst()
+                .orElse(null);
+
+        if (battle == null || !battle.isActive()) {
+            return "Вы не участвуете в активной игре.";
+        }
+
+        Player player = battle.getPlayer1().getName().equals(playerName) ? battle.getPlayer1() : battle.getPlayer2();
+        return battle.rollDigit(player);
+    }
+
 }

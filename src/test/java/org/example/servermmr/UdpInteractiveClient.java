@@ -82,7 +82,13 @@ public class UdpInteractiveClient {
                             messageToSend = "LEAVE " + playerName;
                         }
                         break;
-
+                    case "ROLL":
+                        if (playerName.isEmpty() || token.isEmpty()) {
+                            System.out.println("❗ Сначала выполните JOIN.");
+                        } else {
+                            messageToSend = "ROLL " + playerName + " " + token;
+                        }
+                        break;
                     default:
                         System.out.println("❌ Неизвестная команда.");
                         break;

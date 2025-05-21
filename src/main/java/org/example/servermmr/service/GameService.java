@@ -5,7 +5,6 @@ import org.example.servermmr.MessageEnvelope;
 import org.example.servermmr.model.Battle;
 import org.example.servermmr.model.Player;
 import org.example.servermmr.repository.PlayerRepository;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.net.DatagramPacket;
@@ -13,12 +12,15 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.logging.Logger;
+
 
 @Service
 public class GameService {
     private final PlayerRepository repository;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final BattleManager battleManager;
+    private static final Logger logger = Logger.getLogger(GameService.class.getName());
 
     public GameService(PlayerRepository repository, BattleManager battleManager) {
         this.repository = repository;
@@ -29,24 +31,7 @@ public class GameService {
         try {
             byte[] data = objectMapper.writeValueAsBytes(envelope);
             socket.send(new DatagramPacket(data, data.length, address, port));
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    public void sendRaw(String message, InetAddress address, int port, DatagramSocket socket) {
-        try {
-            byte[] response = message.getBytes();
-            socket.send(new DatagramPacket(response, response.length, address, port));
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    public void sendRaw(String message, String ip, int port, DatagramSocket socket) {
-        try {
-            InetAddress address = InetAddress.getByName(ip);
-            sendRaw(message, address, port, socket);
+            logger.info(String.format("Отправлен JSON [%s] на %s:%d", envelope.getCommand(), address.getHostAddress(), port));
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -192,11 +177,32 @@ public class GameService {
 
         try {
             InetAddress address = InetAddress.getByName(self.getIp());
+            logger.info(String.format("Отправка START-сообщения игроку %s [%s:%d] - противник %s, battleId = %s",
+                    self.getName(), self.getIp(), self.getPort(), opponent.getName(), battleId));
             sendJsonResponse(envelope, address, self.getPort(), socket);
         } catch (Exception e) {
+            logger.severe("Ошибка при отправке START-сообщения игроку " + self.getName() + ": " + e.getMessage());
             e.printStackTrace();
         }
     }
 
+    public MessageEnvelope rollDigit(String name, String token) {
+        MessageEnvelope response = new MessageEnvelope();
+        response.setType("response");
+        response.setCommand("ROLL");
+
+        Optional<Player> playerOpt = validatePlayer(name, token);
+        if (playerOpt.isEmpty()) {
+            response.setStatus("ERROR");
+            response.setMessage("Неверный токен или игрок не найден.");
+            return response;
+        }
+
+        String result = battleManager.rollDigitForPlayer(name);
+
+        response.setStatus("OK");
+        response.setMessage(result);
+        return response;
+    }
 
 }

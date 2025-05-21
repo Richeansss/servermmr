@@ -25,6 +25,7 @@ public class CommandDispatcher {
         handlers.put("MOVE", new MoveCommand(gameService));
         handlers.put("PING", new PingCommand(gameService));
         handlers.put("START", new StartCommand(gameService));
+        handlers.put("ROLL", new RollCommand(gameService));
     }
 
     public void dispatch(DatagramPacket packet, DatagramSocket socket) {
